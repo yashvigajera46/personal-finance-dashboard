@@ -12,25 +12,38 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 2. CSS: Hide Branding, Stepper Buttons, and Add Card Effects
+# 2. CSS: Clean Branding & Keep Mobile Sidebar Toggle Accessible
 st.markdown("""
 <style>
-    /* Hide Streamlit header, GitHub links, and footer */
+    /* Hide Streamlit menu, GitHub toolbar, and footer */
     #MainMenu {visibility: hidden !important; display: none !important;}
     footer {visibility: hidden !important; display: none !important;}
-    header {visibility: hidden !important; display: none !important;}
     [data-testid="stToolbar"] {visibility: hidden !important; display: none !important;}
     [data-testid="stDecoration"] {visibility: hidden !important; display: none !important;}
     [data-testid="stStatusWidget"] {visibility: hidden !important; display: none !important;}
     .viewerBadge_container__1QSob {display: none !important;}
 
-    /* Hide + and - stepper buttons across all number fields */
+    /* Keep header transparent so sidebar toggle button is visible on mobile */
+    header[data-testid="stHeader"] {
+        background: transparent !important;
+    }
+    button[data-testid="stSidebarCollapsedControl"],
+    div[data-testid="stSidebarCollapsedControl"] {
+        visibility: visible !important;
+        display: flex !important;
+        background-color: #ede9fe !important;
+        border-radius: 8px !important;
+        color: #7c3aed !important;
+        padding: 4px !important;
+    }
+
+    /* Hide + and - stepper buttons across all number inputs */
     button[data-testid="stNumberInputStepDown"],
     button[data-testid="stNumberInputStepUp"] {
         display: none !important;
     }
 
-    /* Metric Card Styling */
+    /* Interactive Metric Cards */
     @keyframes subtlePulse {
         0% { box-shadow: 0 4px 6px rgba(139, 92, 246, 0.08); }
         50% { box-shadow: 0 10px 20px rgba(139, 92, 246, 0.22); }
@@ -77,7 +90,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# 3. Currency Symbols
+# 3. Currency Symbols (Symbols for UI display)
 CURRENCY_SYMBOLS = {
     "INR": "₹",
     "USD": "$",
@@ -85,7 +98,7 @@ CURRENCY_SYMBOLS = {
     "GBP": "£"
 }
 
-# 4. Session State Storage (Clean Isolated Sandbox)
+# 4. Session State Storage (Clean Sandbox for Every Visitor)
 if "transactions" not in st.session_state:
     st.session_state["transactions"] = []
     st.session_state["next_id"] = 1
@@ -103,7 +116,7 @@ if "subscriptions" not in st.session_state:
     st.session_state["subscriptions"] = []
     st.session_state["next_sub_id"] = 1
 
-# 5. Safe PDF Generator
+# 5. Safe PDF Generator (ASCII-safe for FPDF)
 def generate_pdf_report(df, total_income, total_expense, net_savings, curr_code):
     pdf_label_map = {"INR": "Rs. ", "USD": "$ ", "EUR": "EUR ", "GBP": "GBP "}
     pdf_sym = pdf_label_map.get(curr_code, f"{curr_code} ")
@@ -140,7 +153,7 @@ def generate_pdf_report(df, total_income, total_expense, net_savings, curr_code)
     pdf.cell(28, 8, "Amount", 1, 0, 'C', True)
     pdf.cell(54, 8, "Description", 1, 1, 'C', True)
 
-    # Table Data
+    # Table Rows
     pdf.set_font("Helvetica", size=9)
     for _, row in df.head(30).iterrows():
         desc = str(row['description']) if row['description'] else "-"
@@ -156,7 +169,7 @@ def generate_pdf_report(df, total_income, total_expense, net_savings, curr_code)
 
     return bytes(pdf.output())
 
-# 6. Sidebar: Direct Typing Inputs
+# 6. Sidebar: Direct Typing Form
 with st.sidebar:
     st.header("➕ Log Transaction")
 
@@ -235,13 +248,13 @@ with st.sidebar:
     except ValueError:
         monthly_budget = 1000.0
 
-# 7. Main Dashboard Header
+# 7. Main Dashboard Content
 st.title("FinPulse Financial Analytics")
 st.caption("Interactive cash flow analysis, currency ledgers, and budget intelligence.")
 
-# Show empty guidance or full analytics
+# Show initial clean onboarding if no records exist
 if not st.session_state["transactions"]:
-    st.info("👋 **Your ledger is ready.** Use the left sidebar to type and log your first transaction.")
+    st.info("👋 **Your ledger is ready.** Open the sidebar on the left to type and log your first transaction.")
 else:
     df = pd.DataFrame(st.session_state["transactions"])
     df["date"] = pd.to_datetime(df["date"])
@@ -268,7 +281,7 @@ else:
             max_date = df["date_only"].max()
             date_range = st.date_input("Date Range", value=(min_date, max_date))
 
-    # Scoped transactions for active currency
+    # Active currency scope
     currency_scoped_df = df[df["currency"] == active_currency].copy()
 
     filtered_df = currency_scoped_df.copy()
