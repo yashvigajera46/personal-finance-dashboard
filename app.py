@@ -12,10 +12,10 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 2. Strict CSS: Completely Hides GitHub Link, Streamlit Toolbar, Header & Footer
+# 2. CSS: Hide Branding, Stepper Buttons, and Add Card Effects
 st.markdown("""
 <style>
-    /* Completely hide Streamlit header bar, GitHub icons, and footer */
+    /* Hide Streamlit header, GitHub links, and footer */
     #MainMenu {visibility: hidden !important; display: none !important;}
     footer {visibility: hidden !important; display: none !important;}
     header {visibility: hidden !important; display: none !important;}
@@ -23,8 +23,14 @@ st.markdown("""
     [data-testid="stDecoration"] {visibility: hidden !important; display: none !important;}
     [data-testid="stStatusWidget"] {visibility: hidden !important; display: none !important;}
     .viewerBadge_container__1QSob {display: none !important;}
-    
-    /* Interactive Card & Button Polish */
+
+    /* Hide + and - stepper buttons across all number fields */
+    button[data-testid="stNumberInputStepDown"],
+    button[data-testid="stNumberInputStepUp"] {
+        display: none !important;
+    }
+
+    /* Metric Card Styling */
     @keyframes subtlePulse {
         0% { box-shadow: 0 4px 6px rgba(139, 92, 246, 0.08); }
         50% { box-shadow: 0 10px 20px rgba(139, 92, 246, 0.22); }
@@ -71,7 +77,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# 3. Currency symbols
+# 3. Currency Symbols
 CURRENCY_SYMBOLS = {
     "INR": "Rs. ",
     "USD": "$",
@@ -79,7 +85,7 @@ CURRENCY_SYMBOLS = {
     "GBP": "GBP "
 }
 
-# 4. In-Memory Session Storage (Zero Initial Data)
+# 4. Session State Storage (Clean Isolated Sandbox)
 if "transactions" not in st.session_state:
     st.session_state["transactions"] = []
     st.session_state["next_id"] = 1
@@ -97,7 +103,7 @@ if "subscriptions" not in st.session_state:
     st.session_state["subscriptions"] = []
     st.session_state["next_sub_id"] = 1
 
-# 5. Safe ASCII PDF Generator
+# 5. Safe PDF Generator
 def generate_pdf_report(df, total_income, total_expense, net_savings, curr_code):
     pdf_label_map = {"INR": "Rs. ", "USD": "$ ", "EUR": "EUR ", "GBP": "GBP "}
     pdf_sym = pdf_label_map.get(curr_code, f"{curr_code} ")
@@ -113,7 +119,7 @@ def generate_pdf_report(df, total_income, total_expense, net_savings, curr_code)
     pdf.cell(0, 8, f"Generated on: {date.today().strftime('%B %d, %Y')} | Currency: {curr_code}", ln=True, align="C")
     pdf.ln(6)
 
-    # Overview Summary Box
+    # Overview Box
     pdf.set_fill_color(248, 247, 252)
     pdf.rect(10, 32, 190, 26, 'F')
     pdf.set_font("Helvetica", 'B', 11)
@@ -150,7 +156,7 @@ def generate_pdf_report(df, total_income, total_expense, net_savings, curr_code)
 
     return bytes(pdf.output())
 
-# 6. Sidebar: User Enters Their Own Data
+# 6. Sidebar: Direct Typing Inputs
 with st.sidebar:
     st.header("➕ Log Transaction")
 
@@ -175,18 +181,32 @@ with st.sidebar:
     entry_currency = st.selectbox("Currency", ["INR", "USD", "EUR", "GBP"])
     entry_sym = CURRENCY_SYMBOLS[entry_currency]
 
-    amount = st.number_input(f"Amount ({entry_sym})", min_value=0.01, step=10.0, format="%.2f")
+    # Direct typing amount field
+    amount_text = st.text_input(f"Amount ({entry_sym})", placeholder="Type amount, e.g. 450")
+
     payment_mode = st.selectbox("Payment Method", ["UPI / Net Banking", "Cash", "Credit Card", "Debit Card"])
     selected_tags = st.multiselect("Tags", ["#Personal", "#Academic", "#Work", "#Trip", "#Bill", "#TaxDeductible"])
     description = st.text_input("Description / Notes")
 
     if st.button("Save Record", use_container_width=True):
+        if not amount_text.strip():
+            st.error("Please enter an amount.")
+            st.stop()
+        try:
+            parsed_amount = float(amount_text.strip())
+            if parsed_amount <= 0:
+                st.error("Amount must be greater than 0.")
+                st.stop()
+        except ValueError:
+            st.error("Please enter a valid numeric amount.")
+            st.stop()
+
         new_record = {
             "id": st.session_state["next_id"],
             "date": trans_date,
             "type": trans_type,
             "category": final_category,
-            "amount": float(amount),
+            "amount": parsed_amount,
             "currency": entry_currency,
             "payment_method": payment_mode,
             "tags": ", ".join(selected_tags),
@@ -197,24 +217,31 @@ with st.sidebar:
 
         if trans_type == "Income":
             st.balloons()
-            st.toast(f"Inflow of {entry_sym}{amount:,.2f} recorded!", icon="🎉")
+            st.toast(f"Inflow of {entry_sym}{parsed_amount:,.2f} recorded!", icon="🎉")
         else:
-            st.toast(f"Expense of {entry_sym}{amount:,.2f} recorded.", icon="📝")
+            st.toast(f"Expense of {entry_sym}{parsed_amount:,.2f} recorded.", icon="📝")
         st.rerun()
 
     st.markdown("---")
     st.header("🎯 Target Budget")
     budget_currency = st.selectbox("Budget Currency", ["INR", "USD", "EUR", "GBP"], key="budget_curr")
     budget_sym = CURRENCY_SYMBOLS[budget_currency]
-    monthly_budget = st.number_input(f"Monthly Budget Cap ({budget_sym})", min_value=100.0, value=25000.0 if budget_currency == "INR" else 1500.0, step=100.0)
+
+    # Direct typing budget field
+    default_budget = "25000" if budget_currency == "INR" else "1500"
+    budget_input = st.text_input(f"Monthly Budget Cap ({budget_sym})", value=default_budget)
+    try:
+        monthly_budget = float(budget_input.strip()) if budget_input.strip() else 1000.0
+    except ValueError:
+        monthly_budget = 1000.0
 
 # 7. Main Dashboard Header
 st.title("FinPulse Financial Analytics")
 st.caption("Interactive cash flow analysis, currency ledgers, and budget intelligence.")
 
-# Check if session has records
+# Show empty guidance or full analytics
 if not st.session_state["transactions"]:
-    st.info("👋 **Welcome! Your ledger is currently empty.** Use the left sidebar to log your first income or expense transaction.")
+    st.info("👋 **Your ledger is ready.** Use the left sidebar to type and log your first transaction.")
 else:
     df = pd.DataFrame(st.session_state["transactions"])
     df["date"] = pd.to_datetime(df["date"])
@@ -241,7 +268,7 @@ else:
             max_date = df["date_only"].max()
             date_range = st.date_input("Date Range", value=(min_date, max_date))
 
-    # Currency filter scoping
+    # Scoped transactions for active currency
     currency_scoped_df = df[df["currency"] == active_currency].copy()
 
     filtered_df = currency_scoped_df.copy()
@@ -353,11 +380,18 @@ else:
         with b_col1:
             st.markdown("#### Set Limit")
             bud_cat = st.selectbox("Select Expense Category", st.session_state["custom_categories"]["Expense"])
-            bud_limit = st.number_input(f"Category Limit ({active_sym})", min_value=10.0, value=5000.0 if active_currency == "INR" else 250.0, step=25.0)
+            limit_input = st.text_input(f"Category Limit ({active_sym})", placeholder="e.g. 5000")
             if st.button("Save Category Budget", use_container_width=True):
-                st.session_state["category_budgets"][bud_cat] = float(bud_limit)
-                st.toast(f"Budget updated for {bud_cat}", icon="🎯")
-                st.rerun()
+                try:
+                    limit_val = float(limit_input.strip())
+                    if limit_val > 0:
+                        st.session_state["category_budgets"][bud_cat] = limit_val
+                        st.toast(f"Budget updated for {bud_cat}", icon="🎯")
+                        st.rerun()
+                    else:
+                        st.error("Limit must be greater than 0.")
+                except ValueError:
+                    st.error("Please enter a valid numeric limit.")
 
         with b_col2:
             st.markdown("#### Budget Tracking Status")
@@ -383,23 +417,35 @@ else:
             sub_cat = st.selectbox("Category", st.session_state["custom_categories"]["Expense"], key="sub_cat")
             sub_curr = st.selectbox("Currency", ["INR", "USD", "EUR", "GBP"], key="sub_curr")
             sub_sym = CURRENCY_SYMBOLS[sub_curr]
-            sub_amt = st.number_input(f"Monthly Cost ({sub_sym})", min_value=1.0, value=199.0 if sub_curr == "INR" else 15.0, step=5.0)
-            sub_day = st.number_input("Billing Day (1-31)", min_value=1, max_value=31, value=1)
+            sub_amt_str = st.text_input(f"Monthly Cost ({sub_sym})", placeholder="e.g. 199")
+            sub_day_str = st.text_input("Billing Day (1-31)", value="1")
             
             if st.button("Add Subscription", use_container_width=True):
-                if sub_name.strip():
-                    new_sub = {
-                        "id": st.session_state["next_sub_id"],
-                        "name": sub_name,
-                        "category": sub_cat,
-                        "amount": float(sub_amt),
-                        "currency": sub_curr,
-                        "billing_day": int(sub_day)
-                    }
-                    st.session_state["subscriptions"].append(new_sub)
-                    st.session_state["next_sub_id"] += 1
-                    st.toast(f"Subscription added: {sub_name}", icon="🔁")
-                    st.rerun()
+                if not sub_name.strip():
+                    st.error("Enter a service name.")
+                    st.stop()
+                try:
+                    s_amt = float(sub_amt_str.strip())
+                    s_day = int(sub_day_str.strip())
+                    if not (1 <= s_day <= 31):
+                        st.error("Billing day must be between 1 and 31.")
+                        st.stop()
+                except ValueError:
+                    st.error("Please enter valid numbers for cost and day.")
+                    st.stop()
+
+                new_sub = {
+                    "id": st.session_state["next_sub_id"],
+                    "name": sub_name,
+                    "category": sub_cat,
+                    "amount": s_amt,
+                    "currency": sub_curr,
+                    "billing_day": s_day
+                }
+                st.session_state["subscriptions"].append(new_sub)
+                st.session_state["next_sub_id"] += 1
+                st.toast(f"Subscription added: {sub_name}", icon="🔁")
+                st.rerun()
 
         with s_col2:
             st.markdown("#### Active Subscriptions")
@@ -438,19 +484,25 @@ else:
                 default_curr_idx = curr_list.index(row_to_edit["currency"]) if row_to_edit["currency"] in curr_list else 0
                 new_curr = st.selectbox("Currency", curr_list, index=default_curr_idx)
                 
-                new_amt = st.number_input("Amount", value=float(row_to_edit["amount"]), min_value=0.01, step=1.0, format="%.2f")
+                new_amt_str = st.text_input("Amount", value=str(row_to_edit["amount"]))
                 new_mode = st.selectbox("Payment Method", ["UPI / Net Banking", "Cash", "Credit Card", "Debit Card"])
                 new_tags = st.text_input("Tags", value=str(row_to_edit["tags"]) if row_to_edit["tags"] else "")
                 new_desc = st.text_input("Description", value=str(row_to_edit["description"]) if row_to_edit["description"] else "")
                 
                 if st.form_submit_button("Update Transaction"):
+                    try:
+                        updated_amount = float(new_amt_str.strip())
+                    except ValueError:
+                        st.error("Please enter a valid numeric amount.")
+                        st.stop()
+
                     for item in st.session_state["transactions"]:
                         if item["id"] == edit_id:
                             item.update({
                                 "date": new_date,
                                 "type": new_type,
                                 "category": new_cat,
-                                "amount": new_amt,
+                                "amount": updated_amount,
                                 "currency": new_curr,
                                 "description": new_desc,
                                 "payment_method": new_mode,
