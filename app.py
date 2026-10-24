@@ -1,11 +1,10 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from fpdf import FPDF
-import os
 
-# Page Setup
+# 1. Page Configuration
 st.set_page_config(
     page_title="FinPulse Pro | Financial Analytics",
     page_icon="💜",
@@ -13,22 +12,22 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- VISIBLE CSS ANIMATIONS & CLEAN UI ---
+# 2. Strict CSS: Completely Hides GitHub Link, Streamlit Toolbar, Header & Footer
 st.markdown("""
 <style>
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    [data-testid="stDecoration"] {visibility: hidden; display: none !important;}
-
-    @keyframes floatGraphic {
-        0% { transform: translateY(0px) rotate(0deg); }
-        50% { transform: translateY(-8px) rotate(2deg); }
-        100% { transform: translateY(0px) rotate(0deg); }
-    }
-
+    /* Completely hide Streamlit header bar, GitHub icons, and footer */
+    #MainMenu {visibility: hidden !important; display: none !important;}
+    footer {visibility: hidden !important; display: none !important;}
+    header {visibility: hidden !important; display: none !important;}
+    [data-testid="stToolbar"] {visibility: hidden !important; display: none !important;}
+    [data-testid="stDecoration"] {visibility: hidden !important; display: none !important;}
+    [data-testid="stStatusWidget"] {visibility: hidden !important; display: none !important;}
+    .viewerBadge_container__1QSob {display: none !important;}
+    
+    /* Interactive Card & Button Polish */
     @keyframes subtlePulse {
         0% { box-shadow: 0 4px 6px rgba(139, 92, 246, 0.08); }
-        50% { box-shadow: 0 10px 20px rgba(139, 92, 246, 0.25); }
+        50% { box-shadow: 0 10px 20px rgba(139, 92, 246, 0.22); }
         100% { box-shadow: 0 4px 6px rgba(139, 92, 246, 0.08); }
     }
 
@@ -38,18 +37,17 @@ st.markdown("""
         padding: 1.2rem !important;
         border-radius: 16px !important;
         box-shadow: 0 4px 8px rgba(76, 29, 149, 0.06) !important;
-        transition: transform 0.28s ease, box-shadow 0.28s ease, border-color 0.28s ease !important;
+        transition: transform 0.25s ease, box-shadow 0.25s ease !important;
         animation: subtlePulse 4s infinite ease-in-out;
     }
     div[data-testid="stMetric"]:hover {
-        transform: translateY(-8px) scale(1.02) !important;
-        box-shadow: 0 14px 28px rgba(124, 58, 237, 0.22) !important;
+        transform: translateY(-6px) !important;
+        box-shadow: 0 14px 26px rgba(124, 58, 237, 0.20) !important;
         border-color: #8b5cf6 !important;
     }
     div[data-testid="stMetricLabel"] > div {
         color: #6b7280 !important;
         font-weight: 700 !important;
-        font-size: 0.95rem !important;
     }
     div[data-testid="stMetricValue"] > div {
         color: #1e1b4b !important;
@@ -63,58 +61,43 @@ st.markdown("""
         border-radius: 10px !important;
         font-weight: 600 !important;
         padding: 0.6rem 1.2rem !important;
-        transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease !important;
+        transition: transform 0.2s ease, box-shadow 0.2s ease !important;
     }
     div.stButton > button:hover {
         background-color: #6d28d9 !important;
-        transform: translateY(-3px) scale(1.02) !important;
-        box-shadow: 0 8px 18px rgba(124, 58, 237, 0.35) !important;
-    }
-
-    .floating-logo {
-        animation: floatGraphic 3s ease-in-out infinite;
-        display: inline-block;
+        transform: translateY(-2px) !important;
+        box-shadow: 0 8px 16px rgba(124, 58, 237, 0.32) !important;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# Currency mapping
+# 3. Currency symbols
 CURRENCY_SYMBOLS = {
-    "INR": "₹",
+    "INR": "Rs. ",
     "USD": "$",
-    "EUR": "€",
-    "GBP": "£"
+    "EUR": "EUR ",
+    "GBP": "GBP "
 }
 
-# --- INITIALIZE IN-MEMORY SESSION DATA FOR EACH VISITOR ---
+# 4. In-Memory Session Storage (Zero Initial Data)
 if "transactions" not in st.session_state:
-    today = date.today()
-    sample_records = [
-        {"id": 1, "date": today - timedelta(days=12), "type": "Income", "category": "Salary", "amount": 65000.0, "currency": "INR", "payment_method": "UPI / Net Banking", "tags": "#Work", "description": "Monthly software stipend"},
-        {"id": 2, "date": today - timedelta(days=9), "type": "Expense", "category": "Rent & Utilities", "amount": 14000.0, "currency": "INR", "payment_method": "UPI / Net Banking", "tags": "#Bill", "description": "Apartment rent"},
-        {"id": 3, "date": today - timedelta(days=7), "type": "Expense", "category": "Food & Dining", "amount": 3200.0, "currency": "INR", "payment_method": "UPI / Net Banking", "tags": "#Personal", "description": "Groceries & Cafe"},
-        {"id": 4, "date": today - timedelta(days=4), "type": "Expense", "category": "Transport", "amount": 1250.0, "currency": "INR", "payment_method": "Cash", "tags": "#Trip", "description": "Fuel & Commute"},
-        {"id": 5, "date": today - timedelta(days=2), "type": "Expense", "category": "Entertainment", "amount": 899.0, "currency": "INR", "payment_method": "Debit Card", "tags": "#Personal", "description": "Streaming & Cinema"},
-        {"id": 6, "date": today - timedelta(days=10), "type": "Income", "category": "Freelance", "amount": 1200.0, "currency": "USD", "payment_method": "UPI / Net Banking", "tags": "#Work", "description": "Web app dashboard project"},
-        {"id": 7, "date": today - timedelta(days=5), "type": "Expense", "category": "Education", "amount": 120.0, "currency": "USD", "payment_method": "Credit Card", "tags": "#Academic", "description": "Cloud hosting & dev tools"}
-    ]
-    st.session_state["transactions"] = sample_records
-    st.session_state["next_id"] = 8
+    st.session_state["transactions"] = []
+    st.session_state["next_id"] = 1
 
 if "custom_categories" not in st.session_state:
-    st.session_state["custom_categories"] = {"Expense": ["Food & Dining", "Rent & Utilities", "Transport", "Shopping", "Entertainment", "Health", "Education", "Other"], "Income": ["Salary", "Freelance", "Stipend", "Investment", "Other"]}
+    st.session_state["custom_categories"] = {
+        "Expense": ["Food & Dining", "Rent & Utilities", "Transport", "Shopping", "Entertainment", "Health", "Education", "Other"],
+        "Income": ["Salary", "Freelance", "Stipend", "Investment", "Other"]
+    }
 
 if "category_budgets" not in st.session_state:
-    st.session_state["category_budgets"] = {"Food & Dining": 6000.0, "Entertainment": 2500.0, "Shopping": 5000.0}
+    st.session_state["category_budgets"] = {}
 
 if "subscriptions" not in st.session_state:
-    st.session_state["subscriptions"] = [
-        {"id": 1, "name": "Spotify Premium", "category": "Entertainment", "amount": 119.0, "currency": "INR", "billing_day": 5},
-        {"id": 2, "name": "GitHub Copilot", "category": "Education", "amount": 10.0, "currency": "USD", "billing_day": 14}
-    ]
-    st.session_state["next_sub_id"] = 3
+    st.session_state["subscriptions"] = []
+    st.session_state["next_sub_id"] = 1
 
-# --- HELPER: SAFE PDF GENERATION ---
+# 5. Safe ASCII PDF Generator
 def generate_pdf_report(df, total_income, total_expense, net_savings, curr_code):
     pdf_label_map = {"INR": "Rs. ", "USD": "$ ", "EUR": "EUR ", "GBP": "GBP "}
     pdf_sym = pdf_label_map.get(curr_code, f"{curr_code} ")
@@ -130,7 +113,7 @@ def generate_pdf_report(df, total_income, total_expense, net_savings, curr_code)
     pdf.cell(0, 8, f"Generated on: {date.today().strftime('%B %d, %Y')} | Currency: {curr_code}", ln=True, align="C")
     pdf.ln(6)
 
-    # Summary box
+    # Overview Summary Box
     pdf.set_fill_color(248, 247, 252)
     pdf.rect(10, 32, 190, 26, 'F')
     pdf.set_font("Helvetica", 'B', 11)
@@ -151,7 +134,7 @@ def generate_pdf_report(df, total_income, total_expense, net_savings, curr_code)
     pdf.cell(28, 8, "Amount", 1, 0, 'C', True)
     pdf.cell(54, 8, "Description", 1, 1, 'C', True)
 
-    # Rows
+    # Table Data
     pdf.set_font("Helvetica", size=9)
     for _, row in df.head(30).iterrows():
         desc = str(row['description']) if row['description'] else "-"
@@ -167,7 +150,7 @@ def generate_pdf_report(df, total_income, total_expense, net_savings, curr_code)
 
     return bytes(pdf.output())
 
-# --- SIDEBAR: ENTRY FORM ---
+# 6. Sidebar: User Enters Their Own Data
 with st.sidebar:
     st.header("➕ Log Transaction")
 
@@ -189,10 +172,10 @@ with st.sidebar:
     else:
         final_category = chosen_category
 
-    entry_currency = st.selectbox("Currency for this transaction", ["INR", "USD", "EUR", "GBP"])
+    entry_currency = st.selectbox("Currency", ["INR", "USD", "EUR", "GBP"])
     entry_sym = CURRENCY_SYMBOLS[entry_currency]
 
-    amount = st.number_input(f"Amount ({entry_sym})", min_value=0.01, step=5.0, format="%.2f")
+    amount = st.number_input(f"Amount ({entry_sym})", min_value=0.01, step=10.0, format="%.2f")
     payment_mode = st.selectbox("Payment Method", ["UPI / Net Banking", "Cash", "Credit Card", "Debit Card"])
     selected_tags = st.multiselect("Tags", ["#Personal", "#Academic", "#Work", "#Trip", "#Bill", "#TaxDeductible"])
     description = st.text_input("Description / Notes")
@@ -225,27 +208,15 @@ with st.sidebar:
     budget_sym = CURRENCY_SYMBOLS[budget_currency]
     monthly_budget = st.number_input(f"Monthly Budget Cap ({budget_sym})", min_value=100.0, value=25000.0 if budget_currency == "INR" else 1500.0, step=100.0)
 
-# --- HEADER SECTION ---
-head_col1, head_col2 = st.columns([5, 1])
-with head_col1:
-    st.title("FinPulse Financial Analytics")
-    st.caption("Interactive cash flow analysis, currency ledgers, and budget intelligence.")
-with head_col2:
-    st.markdown("""
-    <div class="floating-logo" style="text-align: right; padding-top: 10px;">
-        <svg width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="2" y="4" width="20" height="16" rx="4"></rect>
-            <circle cx="12" cy="12" r="3"></circle>
-            <path d="M6 12h.01M18 12h.01"></path>
-        </svg>
-    </div>
-    """, unsafe_allow_html=True)
+# 7. Main Dashboard Header
+st.title("FinPulse Financial Analytics")
+st.caption("Interactive cash flow analysis, currency ledgers, and budget intelligence.")
 
-df = pd.DataFrame(st.session_state["transactions"])
-
-if df.empty:
-    st.info("👋 Sandbox is empty. Use the left sidebar to add transactions.")
+# Check if session has records
+if not st.session_state["transactions"]:
+    st.info("👋 **Welcome! Your ledger is currently empty.** Use the left sidebar to log your first income or expense transaction.")
 else:
+    df = pd.DataFrame(st.session_state["transactions"])
     df["date"] = pd.to_datetime(df["date"])
     df["date_only"] = df["date"].dt.date
 
@@ -393,7 +364,7 @@ else:
             exp_totals = currency_scoped_df[currency_scoped_df["type"] == "Expense"].groupby("category")["amount"].sum().to_dict()
 
             if not st.session_state["category_budgets"]:
-                st.info("No category budgets configured.")
+                st.info("No category budgets configured yet.")
             else:
                 for c_name, c_limit in st.session_state["category_budgets"].items():
                     c_spent = exp_totals.get(c_name, 0.0)
@@ -434,7 +405,7 @@ else:
             st.markdown("#### Active Subscriptions")
             subs_df = pd.DataFrame(st.session_state["subscriptions"])
             if subs_df.empty:
-                st.info("No recurring expenses added.")
+                st.info("No recurring expenses added yet.")
             else:
                 st.dataframe(subs_df[["id", "name", "category", "amount", "currency", "billing_day"]], use_container_width=True, hide_index=True)
                 del_sub_id = st.selectbox("Select Subscription ID to Cancel", options=subs_df["id"].tolist())
@@ -443,9 +414,9 @@ else:
                     st.toast("Subscription canceled", icon="🗑️")
                     st.rerun()
 
-    # 4. CRUD
+    # 4. TRANSACTION CRUD
     with tab_crud:
-        st.subheader("Interactive Ledger (All Currencies)")
+        st.subheader("Interactive Ledger")
         table_display = df[["id", "date_only", "type", "category", "amount", "currency", "payment_method", "tags", "description"]].copy()
         table_display.rename(columns={"date_only": "date"}, inplace=True)
         st.dataframe(table_display, use_container_width=True, hide_index=True)
