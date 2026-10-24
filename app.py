@@ -79,10 +79,10 @@ st.markdown("""
 
 # 3. Currency Symbols
 CURRENCY_SYMBOLS = {
-    "INR": "Rs. ",
+    "INR": "₹",
     "USD": "$",
-    "EUR": "EUR ",
-    "GBP": "GBP "
+    "EUR": "€",
+    "GBP": "£"
 }
 
 # 4. Session State Storage (Clean Isolated Sandbox)
