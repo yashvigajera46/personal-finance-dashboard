@@ -89,7 +89,14 @@ CURRENCY_SYMBOLS = {
 
 # --- HELPER: SAFE PDF GENERATION ---
 def generate_pdf_report(df, total_income, total_expense, net_savings, curr_code):
-    pdf_sym = "Rs. " if curr_code == "INR" else (CURRENCY_SYMBOLS.get(curr_code, "") + " ")
+    pdf_label_map = {
+        "INR": "Rs. ",
+        "USD": "$ ",
+        "EUR": "EUR ",
+        "GBP": "GBP "
+    }
+    pdf_sym = pdf_label_map.get(curr_code, f"{curr_code} ")
+
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Helvetica", 'B', 18)
@@ -126,6 +133,7 @@ def generate_pdf_report(df, total_income, total_expense, net_savings, curr_code)
     pdf.set_font("Helvetica", size=9)
     for _, row in df.head(30).iterrows():
         desc = str(row['description']) if row['description'] else "-"
+        desc = desc.encode('ascii', 'ignore').decode('ascii')
         if len(desc) > 25:
             desc = desc[:22] + "..."
         pdf.cell(24, 7, str(row['date'])[:10], 1)
@@ -230,7 +238,6 @@ else:
     with st.expander("🔍 Filter Transactions & Currency View", expanded=True):
         f_col1, f_col2, f_col3, f_col4, f_col5 = st.columns(5)
         with f_col1:
-            # Active viewing currency for totals and charts
             available_currencies = list(df["currency"].dropna().unique())
             active_currency = st.selectbox("View Currency", available_currencies if available_currencies else ["INR"])
             active_sym = CURRENCY_SYMBOLS.get(active_currency, active_currency)
@@ -248,7 +255,7 @@ else:
             max_date = df["date_only"].max()
             date_range = st.date_input("Date Range", value=(min_date, max_date))
 
-    # Apply currency separation filter so amounts from different currencies never mix
+    # Currency filter scoping
     currency_scoped_df = df[df["currency"] == active_currency].copy()
 
     filtered_df = currency_scoped_df.copy()
@@ -273,7 +280,6 @@ else:
     kpi2.metric("Total Expenses", f"{active_sym}{total_expense:,.2f}")
     kpi3.metric("Net Savings", f"{active_sym}{net_savings:,.2f}", delta=f"{savings_rate:.1f}% rate")
     
-    # Budget usage evaluated in chosen budget currency
     budget_usage = (total_expense / monthly_budget) * 100 if active_currency == budget_currency else 0.0
     if active_currency == budget_currency:
         kpi4.metric(
