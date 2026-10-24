@@ -1,11 +1,9 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from fpdf import FPDF
 import os
-import database as db
 
 # Page Setup
 st.set_page_config(
@@ -15,9 +13,13 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- VISIBLE CSS ANIMATIONS & CARD HOVER EFFECTS ---
+# --- VISIBLE CSS ANIMATIONS & CLEAN UI ---
 st.markdown("""
 <style>
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    [data-testid="stDecoration"] {visibility: hidden; display: none !important;}
+
     @keyframes floatGraphic {
         0% { transform: translateY(0px) rotate(0deg); }
         50% { transform: translateY(-8px) rotate(2deg); }
@@ -76,9 +78,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Initialize database
-db.init_db()
-
 # Currency mapping
 CURRENCY_SYMBOLS = {
     "INR": "₹",
@@ -87,14 +86,37 @@ CURRENCY_SYMBOLS = {
     "GBP": "£"
 }
 
+# --- INITIALIZE IN-MEMORY SESSION DATA FOR EACH VISITOR ---
+if "transactions" not in st.session_state:
+    today = date.today()
+    sample_records = [
+        {"id": 1, "date": today - timedelta(days=12), "type": "Income", "category": "Salary", "amount": 65000.0, "currency": "INR", "payment_method": "UPI / Net Banking", "tags": "#Work", "description": "Monthly software stipend"},
+        {"id": 2, "date": today - timedelta(days=9), "type": "Expense", "category": "Rent & Utilities", "amount": 14000.0, "currency": "INR", "payment_method": "UPI / Net Banking", "tags": "#Bill", "description": "Apartment rent"},
+        {"id": 3, "date": today - timedelta(days=7), "type": "Expense", "category": "Food & Dining", "amount": 3200.0, "currency": "INR", "payment_method": "UPI / Net Banking", "tags": "#Personal", "description": "Groceries & Cafe"},
+        {"id": 4, "date": today - timedelta(days=4), "type": "Expense", "category": "Transport", "amount": 1250.0, "currency": "INR", "payment_method": "Cash", "tags": "#Trip", "description": "Fuel & Commute"},
+        {"id": 5, "date": today - timedelta(days=2), "type": "Expense", "category": "Entertainment", "amount": 899.0, "currency": "INR", "payment_method": "Debit Card", "tags": "#Personal", "description": "Streaming & Cinema"},
+        {"id": 6, "date": today - timedelta(days=10), "type": "Income", "category": "Freelance", "amount": 1200.0, "currency": "USD", "payment_method": "UPI / Net Banking", "tags": "#Work", "description": "Web app dashboard project"},
+        {"id": 7, "date": today - timedelta(days=5), "type": "Expense", "category": "Education", "amount": 120.0, "currency": "USD", "payment_method": "Credit Card", "tags": "#Academic", "description": "Cloud hosting & dev tools"}
+    ]
+    st.session_state["transactions"] = sample_records
+    st.session_state["next_id"] = 8
+
+if "custom_categories" not in st.session_state:
+    st.session_state["custom_categories"] = {"Expense": ["Food & Dining", "Rent & Utilities", "Transport", "Shopping", "Entertainment", "Health", "Education", "Other"], "Income": ["Salary", "Freelance", "Stipend", "Investment", "Other"]}
+
+if "category_budgets" not in st.session_state:
+    st.session_state["category_budgets"] = {"Food & Dining": 6000.0, "Entertainment": 2500.0, "Shopping": 5000.0}
+
+if "subscriptions" not in st.session_state:
+    st.session_state["subscriptions"] = [
+        {"id": 1, "name": "Spotify Premium", "category": "Entertainment", "amount": 119.0, "currency": "INR", "billing_day": 5},
+        {"id": 2, "name": "GitHub Copilot", "category": "Education", "amount": 10.0, "currency": "USD", "billing_day": 14}
+    ]
+    st.session_state["next_sub_id"] = 3
+
 # --- HELPER: SAFE PDF GENERATION ---
 def generate_pdf_report(df, total_income, total_expense, net_savings, curr_code):
-    pdf_label_map = {
-        "INR": "Rs. ",
-        "USD": "$ ",
-        "EUR": "EUR ",
-        "GBP": "GBP "
-    }
+    pdf_label_map = {"INR": "Rs. ", "USD": "$ ", "EUR": "EUR ", "GBP": "GBP "}
     pdf_sym = pdf_label_map.get(curr_code, f"{curr_code} ")
 
     pdf = FPDF()
@@ -145,34 +167,28 @@ def generate_pdf_report(df, total_income, total_expense, net_savings, curr_code)
 
     return bytes(pdf.output())
 
-# --- SIDEBAR: ENTRY FORM WITH SEPARATE CURRENCY ---
+# --- SIDEBAR: ENTRY FORM ---
 with st.sidebar:
     st.header("➕ Log Transaction")
 
     trans_date = st.date_input("Date", value=date.today())
     trans_type = st.selectbox("Type", ["Expense", "Income"])
 
-    base_cats = {
-        "Expense": ["Food & Dining", "Rent & Utilities", "Transport", "Shopping", "Entertainment", "Health", "Education", "Other"],
-        "Income": ["Salary", "Freelance", "Stipend", "Investment", "Other"]
-    }
-    custom_saved = db.get_custom_categories(trans_type)
-    combined_cats = base_cats[trans_type] + [c for c in custom_saved if c not in base_cats[trans_type]]
-    combined_cats.append("➕ Create New Category...")
+    existing_cats = st.session_state["custom_categories"][trans_type]
+    combined_cats = existing_cats + ["➕ Create New Category..."]
 
     chosen_category = st.selectbox("Category", combined_cats)
     if chosen_category == "➕ Create New Category...":
         new_cat_input = st.text_input("Enter New Category Name")
         if st.button("Save New Category"):
-            if new_cat_input.strip():
-                db.add_custom_category(new_cat_input.strip(), trans_type)
+            if new_cat_input.strip() and new_cat_input.strip() not in existing_cats:
+                st.session_state["custom_categories"][trans_type].append(new_cat_input.strip())
                 st.toast(f"Category added: {new_cat_input}", icon="✨")
                 st.rerun()
         final_category = new_cat_input.strip() if new_cat_input.strip() else "Other"
     else:
         final_category = chosen_category
 
-    # Transaction-specific currency
     entry_currency = st.selectbox("Currency for this transaction", ["INR", "USD", "EUR", "GBP"])
     entry_sym = CURRENCY_SYMBOLS[entry_currency]
 
@@ -181,38 +197,39 @@ with st.sidebar:
     selected_tags = st.multiselect("Tags", ["#Personal", "#Academic", "#Work", "#Trip", "#Bill", "#TaxDeductible"])
     description = st.text_input("Description / Notes")
 
-    receipt_file = st.file_uploader("Attach Bill/Receipt (Optional)", type=["png", "jpg", "jpeg"])
-
     if st.button("Save Record", use_container_width=True):
-        saved_receipt_path = ""
-        if receipt_file is not None:
-            filename = f"{int(datetime.now().timestamp())}_{receipt_file.name}"
-            saved_receipt_path = os.path.join(db.RECEIPTS_DIR, filename)
-            with open(saved_receipt_path, "wb") as f:
-                f.write(receipt_file.getbuffer())
+        new_record = {
+            "id": st.session_state["next_id"],
+            "date": trans_date,
+            "type": trans_type,
+            "category": final_category,
+            "amount": float(amount),
+            "currency": entry_currency,
+            "payment_method": payment_mode,
+            "tags": ", ".join(selected_tags),
+            "description": description
+        }
+        st.session_state["transactions"].insert(0, new_record)
+        st.session_state["next_id"] += 1
 
-        tag_str = ", ".join(selected_tags)
-        db.add_transaction(trans_date, trans_type, final_category, amount, entry_currency, description, payment_mode, tag_str, saved_receipt_path)
-        
         if trans_type == "Income":
             st.balloons()
             st.toast(f"Inflow of {entry_sym}{amount:,.2f} recorded!", icon="🎉")
         else:
             st.toast(f"Expense of {entry_sym}{amount:,.2f} recorded.", icon="📝")
-            
         st.rerun()
 
     st.markdown("---")
     st.header("🎯 Target Budget")
     budget_currency = st.selectbox("Budget Currency", ["INR", "USD", "EUR", "GBP"], key="budget_curr")
     budget_sym = CURRENCY_SYMBOLS[budget_currency]
-    monthly_budget = st.number_input(f"Monthly Budget Cap ({budget_sym})", min_value=100.0, value=1500.0, step=100.0)
+    monthly_budget = st.number_input(f"Monthly Budget Cap ({budget_sym})", min_value=100.0, value=25000.0 if budget_currency == "INR" else 1500.0, step=100.0)
 
-# --- HEADER SECTION WITH ANIMATED EMBLEM ---
+# --- HEADER SECTION ---
 head_col1, head_col2 = st.columns([5, 1])
 with head_col1:
     st.title("FinPulse Financial Analytics")
-    st.caption("Cash flow monitoring, separate currency ledgers, and budget intelligence.")
+    st.caption("Interactive cash flow analysis, currency ledgers, and budget intelligence.")
 with head_col2:
     st.markdown("""
     <div class="floating-logo" style="text-align: right; padding-top: 10px;">
@@ -224,31 +241,29 @@ with head_col2:
     </div>
     """, unsafe_allow_html=True)
 
-df = db.get_all_transactions()
+df = pd.DataFrame(st.session_state["transactions"])
 
 if df.empty:
-    st.info("👋 Database is empty. Use the left sidebar to add transactions.")
+    st.info("👋 Sandbox is empty. Use the left sidebar to add transactions.")
 else:
     df["date"] = pd.to_datetime(df["date"])
     df["date_only"] = df["date"].dt.date
-    if "currency" not in df.columns:
-        df["currency"] = "INR"
 
     # --- ADVANCED FILTER BAR ---
     with st.expander("🔍 Filter Transactions & Currency View", expanded=True):
         f_col1, f_col2, f_col3, f_col4, f_col5 = st.columns(5)
         with f_col1:
-            available_currencies = list(df["currency"].dropna().unique())
+            available_currencies = sorted(list(df["currency"].dropna().unique()))
             active_currency = st.selectbox("View Currency", available_currencies if available_currencies else ["INR"])
             active_sym = CURRENCY_SYMBOLS.get(active_currency, active_currency)
         with f_col2:
-            all_types = ["All"] + list(df["type"].unique())
+            all_types = ["All"] + sorted(list(df["type"].unique()))
             selected_type = st.selectbox("Type Filter", all_types)
         with f_col3:
-            all_cats = ["All"] + list(df["category"].unique())
+            all_cats = ["All"] + sorted(list(df["category"].unique()))
             selected_cat = st.selectbox("Category Filter", all_cats)
         with f_col4:
-            all_modes = ["All"] + list(df["payment_method"].dropna().unique())
+            all_modes = ["All"] + sorted(list(df["payment_method"].dropna().unique()))
             selected_mode = st.selectbox("Payment Mode", all_modes)
         with f_col5:
             min_date = df["date_only"].min()
@@ -301,7 +316,7 @@ else:
         "📊 Analytics & Trends",
         "🎯 Category Budgets",
         "🔁 Subscriptions",
-        "✏️ Transaction Manager & Receipts",
+        "✏️ Transaction Manager",
         "📁 Reports & Portability"
     ])
 
@@ -366,24 +381,21 @@ else:
         b_col1, b_col2 = st.columns([1, 2])
         with b_col1:
             st.markdown("#### Set Limit")
-            bud_cat = st.selectbox("Select Expense Category", base_cats["Expense"])
-            bud_limit = st.number_input(f"Category Limit ({active_sym})", min_value=10.0, value=250.0, step=25.0)
+            bud_cat = st.selectbox("Select Expense Category", st.session_state["custom_categories"]["Expense"])
+            bud_limit = st.number_input(f"Category Limit ({active_sym})", min_value=10.0, value=5000.0 if active_currency == "INR" else 250.0, step=25.0)
             if st.button("Save Category Budget", use_container_width=True):
-                db.set_category_budget(bud_cat, bud_limit)
-                st.toast(f"Budget saved for {bud_cat}", icon="🎯")
+                st.session_state["category_budgets"][bud_cat] = float(bud_limit)
+                st.toast(f"Budget updated for {bud_cat}", icon="🎯")
                 st.rerun()
 
         with b_col2:
             st.markdown("#### Budget Tracking Status")
-            cat_budgets_df = db.get_category_budgets()
             exp_totals = currency_scoped_df[currency_scoped_df["type"] == "Expense"].groupby("category")["amount"].sum().to_dict()
 
-            if cat_budgets_df.empty:
+            if not st.session_state["category_budgets"]:
                 st.info("No category budgets configured.")
             else:
-                for _, b_row in cat_budgets_df.iterrows():
-                    c_name = b_row["category"]
-                    c_limit = b_row["budget_limit"]
+                for c_name, c_limit in st.session_state["category_budgets"].items():
                     c_spent = exp_totals.get(c_name, 0.0)
                     pct = (c_spent / c_limit) * 100
                     status_badge = "🟢 Normal" if pct < 75 else ("🟡 Warning" if pct <= 100 else "🔴 Exceeded")
@@ -397,35 +409,44 @@ else:
         with s_col1:
             st.markdown("#### Add Subscription")
             sub_name = st.text_input("Service Name (e.g., Spotify, Netflix)")
-            sub_cat = st.selectbox("Category", base_cats["Expense"], key="sub_cat")
+            sub_cat = st.selectbox("Category", st.session_state["custom_categories"]["Expense"], key="sub_cat")
             sub_curr = st.selectbox("Currency", ["INR", "USD", "EUR", "GBP"], key="sub_curr")
             sub_sym = CURRENCY_SYMBOLS[sub_curr]
-            sub_amt = st.number_input(f"Monthly Cost ({sub_sym})", min_value=1.0, value=15.0, step=5.0)
+            sub_amt = st.number_input(f"Monthly Cost ({sub_sym})", min_value=1.0, value=199.0 if sub_curr == "INR" else 15.0, step=5.0)
             sub_day = st.number_input("Billing Day (1-31)", min_value=1, max_value=31, value=1)
             
             if st.button("Add Subscription", use_container_width=True):
                 if sub_name.strip():
-                    db.add_subscription(sub_name, sub_cat, sub_amt, sub_curr, sub_day)
+                    new_sub = {
+                        "id": st.session_state["next_sub_id"],
+                        "name": sub_name,
+                        "category": sub_cat,
+                        "amount": float(sub_amt),
+                        "currency": sub_curr,
+                        "billing_day": int(sub_day)
+                    }
+                    st.session_state["subscriptions"].append(new_sub)
+                    st.session_state["next_sub_id"] += 1
                     st.toast(f"Subscription added: {sub_name}", icon="🔁")
                     st.rerun()
 
         with s_col2:
             st.markdown("#### Active Subscriptions")
-            subs_df = db.get_subscriptions()
+            subs_df = pd.DataFrame(st.session_state["subscriptions"])
             if subs_df.empty:
                 st.info("No recurring expenses added.")
             else:
                 st.dataframe(subs_df[["id", "name", "category", "amount", "currency", "billing_day"]], use_container_width=True, hide_index=True)
                 del_sub_id = st.selectbox("Select Subscription ID to Cancel", options=subs_df["id"].tolist())
                 if st.button("🗑️ Remove Subscription", use_container_width=True):
-                    db.delete_subscription(del_sub_id)
+                    st.session_state["subscriptions"] = [s for s in st.session_state["subscriptions"] if s["id"] != del_sub_id]
                     st.toast("Subscription canceled", icon="🗑️")
                     st.rerun()
 
-    # 4. CRUD & RECEIPTS
+    # 4. CRUD
     with tab_crud:
-        st.subheader("Full Ledger (All Currencies)")
-        table_display = df[["id", "date_only", "type", "category", "amount", "currency", "payment_method", "tags", "description", "receipt_path"]].copy()
+        st.subheader("Interactive Ledger (All Currencies)")
+        table_display = df[["id", "date_only", "type", "category", "amount", "currency", "payment_method", "tags", "description"]].copy()
         table_display.rename(columns={"date_only": "date"}, inplace=True)
         st.dataframe(table_display, use_container_width=True, hide_index=True)
 
@@ -440,36 +461,41 @@ else:
             with st.form(key=f"edit_form_{edit_id}"):
                 new_date = st.date_input("Date", value=pd.to_datetime(row_to_edit["date"]).date())
                 new_type = st.selectbox("Type", ["Expense", "Income"], index=0 if row_to_edit["type"] == "Expense" else 1)
-                new_cat = st.selectbox("Category", base_cats[new_type], index=0)
+                new_cat = st.selectbox("Category", st.session_state["custom_categories"][new_type], index=0)
                 
                 curr_list = ["INR", "USD", "EUR", "GBP"]
                 default_curr_idx = curr_list.index(row_to_edit["currency"]) if row_to_edit["currency"] in curr_list else 0
                 new_curr = st.selectbox("Currency", curr_list, index=default_curr_idx)
                 
-                new_amt = st.number_input(f"Amount", value=float(row_to_edit["amount"]), min_value=0.01, step=1.0, format="%.2f")
+                new_amt = st.number_input("Amount", value=float(row_to_edit["amount"]), min_value=0.01, step=1.0, format="%.2f")
                 new_mode = st.selectbox("Payment Method", ["UPI / Net Banking", "Cash", "Credit Card", "Debit Card"])
                 new_tags = st.text_input("Tags", value=str(row_to_edit["tags"]) if row_to_edit["tags"] else "")
                 new_desc = st.text_input("Description", value=str(row_to_edit["description"]) if row_to_edit["description"] else "")
                 
                 if st.form_submit_button("Update Transaction"):
-                    db.update_transaction(edit_id, new_date, new_type, new_cat, new_amt, new_curr, new_desc, new_mode, new_tags)
+                    for item in st.session_state["transactions"]:
+                        if item["id"] == edit_id:
+                            item.update({
+                                "date": new_date,
+                                "type": new_type,
+                                "category": new_cat,
+                                "amount": new_amt,
+                                "currency": new_curr,
+                                "description": new_desc,
+                                "payment_method": new_mode,
+                                "tags": new_tags
+                            })
+                            break
                     st.toast(f"Record #{edit_id} updated!", icon="✏️")
                     st.rerun()
 
         with manage_col2:
-            st.markdown("#### 🖼️ View Receipt Attachment")
-            inspect_id = st.selectbox("Select ID to View Bill", options=df["id"].tolist(), key="inspect_box")
-            inspected_row = df[df["id"] == inspect_id].iloc[0]
-            r_path = inspected_row.get("receipt_path", "")
-            if r_path and os.path.exists(r_path):
-                st.image(r_path, caption=f"Receipt for Record #{inspect_id}", use_column_width=True)
-            else:
-                st.info("No receipt image attached to this transaction.")
-
+            st.markdown("#### 🗑️ Delete Transaction")
+            del_id = st.selectbox("Select ID to Delete", options=df["id"].tolist(), key="del_box")
             st.write("")
-            if st.button("🗑️ Delete Transaction", type="primary", use_container_width=True):
-                db.delete_transaction(inspect_id)
-                st.toast(f"Record #{inspect_id} removed.", icon="🗑️")
+            if st.button("🗑️ Delete Selected Transaction", type="primary", use_container_width=True):
+                st.session_state["transactions"] = [r for r in st.session_state["transactions"] if r["id"] != del_id]
+                st.toast(f"Record #{del_id} removed.", icon="🗑️")
                 st.rerun()
 
     # 5. DATA PORTABILITY & PDF
